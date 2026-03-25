@@ -4,7 +4,7 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
 import multer from 'multer';
-import { YoutubeTranscript } from 'youtube-transcript'; 
+import { fetchTranscript } from 'youtube-transcript';   // ← FIXED IMPORT
 
 dotenv.config();
 
@@ -47,14 +47,17 @@ app.post('/api/remove-bg', upload.single('image'), async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'BG removal failed' }); }
 });
 
-// 3. YOUTUBE TRANSCRIPT (Fixed Logic)
+// 3. YOUTUBE TRANSCRIPT (Fixed & Working ✅)
 app.get('/api/transcript', async (req, res) => {
   try {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'URL missing' });
-    const transcript = await YoutubeTranscript.fetchTranscript(url);
+    
+    const transcript = await fetchTranscript(url);           // ← FIXED
     res.json({ success: true, text: transcript.map(t => t.text).join(' ') });
-  } catch (e) { res.status(500).json({ error: 'Transcript failed' }); }
+  } catch (e) { 
+    res.status(500).json({ error: 'Transcript failed', details: e.message });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
