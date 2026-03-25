@@ -1,10 +1,12 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const axios = require('axios');
-const FormData = require('form-data');
-const multer = require('multer');
-const { YoutubeTranscript } = require('youtube-transcript');
+import express from 'express';
+import cors from 'cors';
+import axios from 'axios';
+import dotenv from 'dotenv';
+import FormData from 'form-data';
+import multer from 'multer';
+import { YoutubeTranscript } from 'youtube-transcript';
+
+dotenv.config();
 
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
@@ -33,7 +35,6 @@ app.get('/api/gold-rates', async (req, res) => {
   try {
     const apiKey = 'RCFGMFP9WZI5OLHF';
 
-    // Gold price in USD (XAU/USD)
     const response = await axios.get('https://www.alphavantage.co/query', {
       params: {
         function: 'CURRENCY_EXCHANGE_RATE',
@@ -51,11 +52,9 @@ app.get('/api/gold-rates', async (req, res) => {
 
     const goldUSD = parseFloat(data['5. Exchange Rate']);
 
-    // PKR conversion (1 USD = 278 PKR approx)
     const usdPkr = 278;
     const goldPKR = goldUSD * usdPkr;
 
-    // Per tola calculation (1 troy oz = 2.43 tola)
     const goldPerTola = goldPKR / 2.43;
 
     res.json({
@@ -83,7 +82,7 @@ app.post('/api/remove-bg', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Image upload karo' });
     }
 
-    const apiKey = '7a5f34d128d08e246eab2afe4986c2bfe29174a80b167d35ca2b30ec8fbfa4962cfa5b101dc6512bfb52bc704d194a36';
+    const apiKey = 'YOUR_CLIPDROP_API_KEY';
 
     const form = new FormData();
     form.append('image_file', req.file.buffer, {
@@ -122,7 +121,6 @@ app.get('/api/transcript', async (req, res) => {
       return res.status(400).json({ error: 'YouTube URL do ?url=...' });
     }
 
-    // Video ID extract karna
     const videoId = url.match(
       /(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)/
     )?.[1];
@@ -151,6 +149,7 @@ app.get('/api/transcript', async (req, res) => {
 // SERVER START
 // ==========================================
 const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   console.log(`Toolyfi Backend running on port ${PORT}`);
 });
