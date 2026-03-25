@@ -31,7 +31,7 @@ app.get('/', (req, res) => {
 // ==========================================
 app.get('/api/gold-rates', async (req, res) => {
   try {
-    const apiKey = process.env.ALPHAVANTAGE_KEY;
+    const apiKey = 'RCFGMFP9WZI5OLHF';
 
     // Gold price in USD (XAU/USD)
     const response = await axios.get('https://www.alphavantage.co/query', {
@@ -83,7 +83,7 @@ app.post('/api/remove-bg', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Image upload karo' });
     }
 
-    const apiKey = process.env.CLIPDROP_KEY;
+    const apiKey = '7a5f34d128d08e246eab2afe4986c2bfe29174a80b167d35ca2b30ec8fbfa4962cfa5b101dc6512bfb52bc704d194a36';
 
     const form = new FormData();
     form.append('image_file', req.file.buffer, {
