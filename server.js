@@ -29,11 +29,11 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// 1. GOLD RATES API (Alpha Vantage)
+// 1. GOLD RATES API
 // ==========================================
 app.get('/api/gold-rates', async (req, res) => {
   try {
-    const apiKey = 'RCFGMFP9WZI5OLHF';
+    const apiKey = process.env.ALPHA_KEY || 'RCFGMFP9WZI5OLHF';
 
     const response = await axios.get('https://www.alphavantage.co/query', {
       params: {
@@ -74,7 +74,7 @@ app.get('/api/gold-rates', async (req, res) => {
 });
 
 // ==========================================
-// 2. BACKGROUND REMOVER API (Clipdrop)
+// 2. BACKGROUND REMOVER API
 // ==========================================
 app.post('/api/remove-bg', upload.single('image'), async (req, res) => {
   try {
@@ -82,7 +82,10 @@ app.post('/api/remove-bg', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'Image upload karo' });
     }
 
-    const apiKey = 'YOUR_CLIPDROP_API_KEY';
+    const apiKey = process.env.CLIPDROP_KEY || '7a5f34d128d08e246eab2afe4986c2bfe29174a80b167d35ca2b30ec8fbfa4962cfa5b101dc6512bfb52bc704d194a36
+
+
+';
 
     const form = new FormData();
     form.append('image_file', req.file.buffer, {
@@ -106,7 +109,10 @@ app.post('/api/remove-bg', upload.single('image'), async (req, res) => {
     res.send(response.data);
 
   } catch (error) {
-    res.status(500).json({ error: 'Background remove nahi hua', detail: error.message });
+    res.status(500).json({
+      error: 'Background remove nahi hua',
+      detail: error.message
+    });
   }
 });
 
@@ -141,7 +147,10 @@ app.get('/api/transcript', async (req, res) => {
     });
 
   } catch (error) {
-    res.status(500).json({ error: 'Transcript nahi mila', detail: error.message });
+    res.status(500).json({
+      error: 'Transcript nahi mila',
+      detail: error.message
+    });
   }
 });
 
