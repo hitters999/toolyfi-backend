@@ -2,8 +2,8 @@
   "name": "toolyfi-backend",
   "version": "1.0.0",
   "description": "Toolyfi Backend - Gold Rates, Background Remover, YT Transcript",
-  "main": "server.js",
   "type": "module",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"
