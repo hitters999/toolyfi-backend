@@ -4,7 +4,6 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import FormData from 'form-data';
 import multer from 'multer';
-import { fetchTranscript } from 'youtube-transcript';
 
 dotenv.config();
 
@@ -24,8 +23,7 @@ app.get('/', (req, res) => {
     project: 'Toolyfi',
     routes: {
       goldRates: '/api/gold-rates',
-      removeBg: '/api/remove-bg',
-      transcript: '/api/transcript'
+      removeBg: '/api/remove-bg'
     }
   });
 });
@@ -110,36 +108,7 @@ app.post('/api/remove-bg', upload.single('image'), async (req, res) => {
   }
 });
 
-// ==========================================
-// 3. YOUTUBE TRANSCRIPT API (FIXED ✅)
-// ==========================================
-app.get('/api/transcript', async (req, res) => {
-  try {
-    const { url } = req.query;
 
-    if (!url) {
-      return res.status(400).json({ error: 'YouTube URL do ?url=...' });
-    }
-
-    // Fetch transcript using ES6 import
-    const transcript = await fetchTranscript(url);
-
-    if (!transcript || transcript.length === 0) {
-      return res.status(500).json({ error: 'Transcript not available for this video' });
-    }
-
-    const fullText = transcript.map(item => item.text).join(' ');
-
-    res.json({
-      success: true,
-      transcript: fullText,
-      segments: transcript
-    });
-
-  } catch (error) {
-    res.status(500).json({ error: 'Transcript nahi mila', detail: error.message });
-  }
-});
 
 // ==========================================
 // SERVER START
