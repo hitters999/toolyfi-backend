@@ -1,119 +1,202 @@
-import express from 'express';
-import cors from 'cors';
-import axios from 'axios';
-import dotenv from 'dotenv';
-import FormData from 'form-data';
-import multer from 'multer';
-
-dotenv.config();
-
+const express = require('express');
+const cors = require('cors');
 const app = express();
-const upload = multer({ storage: multer.memoryStorage() });
+const PORT = process.env.PORT || 8080;
 
 app.use(cors());
 app.use(express.json());
 
-// ==========================================
-// HOME ROUTE
-// ==========================================
+// Cache system
+let cache = {};
+const CACHE_TIME = 5 * 60 * 1000; // 5 minutes
+
+function getCache(key) {
+  if (cache[key] && Date.now() - cache[key].time < CACHE_TIME) {
+    return cache[key].data;
+  }
+  return null;
+}
+
+function setCache(key, data) {
+  cache[key] = { data, time: Date.now() };
+}
+
+// ============================================
+// ROUTE 1: Gold + Currency Rates
+// ============================================
+app.get('/api/gold', async (req, res) => {
+  try {
+    const cached = getCache('gold');
+    if (cached) return res.json(cached);
+
+    // Fetch Gold Price (USD/oz)
+    let goldUSD = 3100;
+    try {
+      const goldRes = await fetch('https://api.gold-api.com/price/XAU');
+      if (goldRes.ok) {
+        const data = await goldRes.json();
+        goldUSD = data.price || data.Price || data.bid || 3100;
+      }
+    } catch(e) {}
+
+    // Fetch Currency Rates
+    let rates = {};
+    try {
+      const fxRes = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+      if (fxRes.ok) {
+        const data = await fxRes.json();
+        rates = data.rates || {};
+      }
+    } catch(e) {}
+
+    const fallback = {
+      PKR:278.50, EUR:0.92, GBP:0.79, SAR:3.75, AED:3.67,
+      QAR:3.64, KWD:0.31, BHD:0.38, OMR:0.38, INR:83.5,
+      CNY:7.24, JPY:149.5, CAD:1.36, AUD:1.53, CHF:0.89,
+      SGD:1.34, MYR:4.72, TRY:32.5, BDT:110, ZAR:18.63
+    };
+    Object.keys(fallback).forEach(k => { if (!rates[k]) rates[k] = fallback[k]; });
+
+    const usdToPkr = rates.PKR || 278.50;
+    const goldPKRperOz = goldUSD * usdToPkr;
+    const goldPKRperGram = goldPKRperOz / 31.1035;
+    const goldPKRperTola = goldPKRperGram * 11.664;
+
+    const CURRENCY_META = [
+      { flag:'🇺🇸', name:'US Dollar',         code:'USD' },
+      { flag:'🇪🇺', name:'Euro',              code:'EUR' },
+      { flag:'🇬🇧', name:'British Pound',     code:'GBP' },
+      { flag:'🇸🇦', name:'Saudi Riyal',       code:'SAR' },
+      { flag:'🇦🇪', name:'UAE Dirham',        code:'AED' },
+      { flag:'🇶🇦', name:'Qatari Riyal',      code:'QAR' },
+      { flag:'🇰🇼', name:'Kuwaiti Dinar',     code:'KWD' },
+      { flag:'🇧🇭', name:'Bahraini Dinar',    code:'BHD' },
+      { flag:'🇴🇲', name:'Omani Rial',        code:'OMR' },
+      { flag:'🇮🇳', name:'Indian Rupee',      code:'INR' },
+      { flag:'🇨🇳', name:'Chinese Yuan',      code:'CNY' },
+      { flag:'🇯🇵', name:'Japanese Yen',      code:'JPY' },
+      { flag:'🇨🇦', name:'Canadian Dollar',   code:'CAD' },
+      { flag:'🇦🇺', name:'Australian Dollar', code:'AUD' },
+      { flag:'🇨🇭', name:'Swiss Franc',       code:'CHF' },
+      { flag:'🇸🇬', name:'Singapore Dollar',  code:'SGD' },
+      { flag:'🇲🇾', name:'Malaysian Ringgit', code:'MYR' },
+      { flag:'🇹🇷', name:'Turkish Lira',      code:'TRY' },
+      { flag:'🇧🇩', name:'Bangladeshi Taka',  code:'BDT' },
+      { flag:'🇿🇦', name:'South African Rand',code:'ZAR' },
+    ];
+
+    const currencies = CURRENCY_META.map(c => ({
+      ...c,
+      rate: usdToPkr / (rates[c.code] || 1)
+    }));
+
+    const result = {
+      goldUSD: Math.round(goldUSD * 100) / 100,
+      usdToPkr: Math.round(usdToPkr * 100) / 100,
+      goldPKRperTola: Math.round(goldPKRperTola),
+      goldPKRperGram: Math.round(goldPKRperGram),
+      goldPKRper10Gram: Math.round(goldPKRperGram * 10),
+      goldPKRperOunce: Math.round(goldPKRperOz),
+      currencies,
+      lastUpdated: new Date().toISOString()
+    };
+
+    setCache('gold', result);
+    res.json(result);
+
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// ROUTE 2: YouTube Transcript
+// ============================================
+app.get('/api/transcript', async (req, res) => {
+  const { videoId } = req.query;
+  if (!videoId) return res.status(400).json({ error: 'videoId required' });
+
+  const cacheKey = 'transcript_' + videoId;
+  const cached = getCache(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    // Method 1: YouTube timedtext API
+    try {
+      const url = `https://www.youtube.com/api/timedtext?lang=en&v=${videoId}&fmt=json3`;
+      const ytRes = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+      });
+      if (ytRes.ok) {
+        const data = await ytRes.json();
+        if (data && data.events) {
+          const text = data.events
+            .filter(e => e.segs)
+            .map(e => e.segs.map(s => s.utf8 || '').join(''))
+            .join(' ')
+            .replace(/\s+/g, ' ').trim();
+          if (text.length > 50) {
+            const result = { transcript: text };
+            setCache(cacheKey, result);
+            return res.json(result);
+          }
+        }
+      }
+    } catch(e) {}
+
+    // Method 2: YouTube watch page scraping
+    try {
+      const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const ytRes = await fetch(ytUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept-Language': 'en-US,en;q=0.9'
+        }
+      });
+      const html = await ytRes.text();
+      const captionMatch = html.match(/"captionTracks":(\[.*?\])/);
+      if (captionMatch) {
+        const captions = JSON.parse(captionMatch[1]);
+        const track = captions.find(t => t.languageCode === 'en') || captions[0];
+        if (track && track.baseUrl) {
+          const transcriptRes = await fetch(track.baseUrl);
+          const xml = await transcriptRes.text();
+          const texts = [...xml.matchAll(/<text[^>]*>(.*?)<\/text>/gs)]
+            .map(m => m[1]
+              .replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>').replace(/&#39;/g, "'")
+              .replace(/&quot;/g, '"').replace(/<[^>]*>/g, ''))
+            .join(' ');
+          if (texts.length > 50) {
+            const result = { transcript: texts };
+            setCache(cacheKey, result);
+            return res.json(result);
+          }
+        }
+      }
+    } catch(e) {}
+
+    res.status(404).json({ error: 'Transcript not available' });
+
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// ROUTE 3: Health Check
+// ============================================
 app.get('/', (req, res) => {
   res.json({
-    message: 'Toolyfi Backend Running!',
-    status: 'Online',
-    project: 'Toolyfi',
-    routes: {
-      goldRates: '/api/gold-rates',
-      removeBg: '/api/remove-bg'
-    }
+    status: 'Toolyfi Backend Running!',
+    endpoints: [
+      'GET /api/gold — Live gold + currency rates',
+      'GET /api/transcript?videoId=xxx — YouTube transcript',
+    ],
+    time: new Date().toISOString()
   });
 });
 
-// ==========================================
-// 1. GOLD RATES API (Alpha Vantage)
-// ==========================================
-app.get('/api/gold-rates', async (req, res) => {
-  try {
-    const apiKey = process.env.ALPHAVANTAGE_KEY || 'RCFGMFP9WZI5OLHF';
-
-    const response = await axios.get('https://www.alphavantage.co/query', {
-      params: {
-        function: 'CURRENCY_EXCHANGE_RATE',
-        from_currency: 'XAU',
-        to_currency: 'USD',
-        apikey: apiKey
-      }
-    });
-
-    const data = response.data['Realtime Currency Exchange Rate'];
-
-    if (!data) {
-      return res.status(500).json({ error: 'Gold rate nahi mila' });
-    }
-
-    const goldUSD = parseFloat(data['5. Exchange Rate']);
-    const usdPkr = 280;
-    const goldPKR = goldUSD * usdPkr;
-    const goldPerTola = goldPKR / 2.43;
-
-    res.json({
-      success: true,
-      lastUpdated: data['6. Last Refreshed'],
-      rates: {
-        perOunceUSD: goldUSD.toFixed(2),
-        perOuncePKR: goldPKR.toFixed(2),
-        perTolaPKR: goldPerTola.toFixed(2),
-        perGramPKR: (goldPKR / 31.1).toFixed(2)
-      }
-    });
-
-  } catch (error) {
-    res.status(500).json({ error: 'Server error', detail: error.message });
-  }
-});
-
-// ==========================================
-// 2. BACKGROUND REMOVER API (Clipdrop)
-// ==========================================
-app.post('/api/remove-bg', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'Image upload karo' });
-    }
-
-    const apiKey = process.env.CLIPDROP_KEY;
-
-    const form = new FormData();
-    form.append('image_file', req.file.buffer, {
-      filename: req.file.originalname,
-      contentType: req.file.mimetype
-    });
-
-    const response = await axios.post(
-      'https://clipdrop-api.co/remove-background/v1',
-      form,
-      {
-        headers: {
-          'x-api-key': apiKey,
-          ...form.getHeaders()
-        },
-        responseType: 'arraybuffer'
-      }
-    );
-
-    res.set('Content-Type', 'image/png');
-    res.send(response.data);
-
-  } catch (error) {
-    res.status(500).json({ error: 'Background remove nahi hua', detail: error.message });
-  }
-});
-
-
-
-// ==========================================
-// SERVER START
-// ==========================================
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Toolyfi Backend running on port ${PORT}`);
 });
