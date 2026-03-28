@@ -29,37 +29,46 @@ app.get('/api/gold', async (req, res) => {
     const cached = getCache('gold');
     if (cached) return res.json(cached);
 
-    // Fetch Gold Price (USD/oz) - multiple sources
+    // Fetch Gold Price (USD/oz)
     let goldUSD = 3300; // fallback
-    
-    // Method 1: metals.live (free, accurate)
+
+    // Method 1: Alpha Vantage (with API key - most reliable)
     try {
-      const r = await fetch('https://api.metals.live/v1/spot/gold');
-      if (r.ok) {
-        const d = await r.json();
-        const price = d[0]?.price || d?.price || null;
-        if (price && price > 1000) { goldUSD = price; }
+      const avKey = process.env.ALPHAVANTAGE_KEY;
+      if (avKey) {
+        const r = await fetch(
+          'https://www.alphavantage.co/query?function=CURRENCY_EXCHANGE_RATE&from_currency=XAU&to_currency=USD&apikey=' + avKey
+        );
+        if (r.ok) {
+          const d = await r.json();
+          const rate = d['Realtime Currency Exchange Rate'];
+          if (rate && rate['5. Exchange Rate']) {
+            const price = parseFloat(rate['5. Exchange Rate']);
+            if (price > 1000) goldUSD = price;
+          }
+        }
       }
     } catch(e) {}
 
-    // Method 2: frankfurter (XAU vs USD)
+    // Method 2: metals.live fallback
     if (goldUSD === 3300) {
       try {
-        const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
+        const r = await fetch('https://api.metals.live/v1/spot/gold');
         if (r.ok) {
           const d = await r.json();
-          if (d.rates && d.rates.USD && d.rates.USD > 1000) goldUSD = d.rates.USD;
+          const price = Array.isArray(d) ? d[0]?.price : d?.price;
+          if (price && price > 1000) goldUSD = price;
         }
       } catch(e) {}
     }
 
-    // Method 3: gold-api.com
+    // Method 3: gold-api.com fallback
     if (goldUSD === 3300) {
       try {
         const r = await fetch('https://api.gold-api.com/price/XAU');
         if (r.ok) {
           const d = await r.json();
-          const price = d.price_gram_24k ? d.price_gram_24k * 31.1035 : (d.price || d.Price || d.ask || null);
+          const price = d.price || d.Price || d.ask || null;
           if (price && price > 1000) goldUSD = price;
         }
       } catch(e) {}
