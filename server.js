@@ -1,10 +1,15 @@
 const express = require('express');
 const cors = require('cors');
+const fetch = require('node-fetch');
+const FormData = require('form-data');
+const fs = require('fs');
+const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb' }));
 
 // Cache system
 let cache = {};
@@ -219,7 +224,79 @@ app.get('/api/transcript', async (req, res) => {
 });
 
 // ============================================
-// ROUTE 3: Health Check
+// ROUTE 3: REMOVE BACKGROUND (NEW) - Clipdrop API
+// ============================================
+app.post('/api/remove-bg', async (req, res) => {
+  try {
+    const { image } = req.body;
+    
+    if (!image) {
+      return res.status(400).json({ error: 'Image data required (base64)' });
+    }
+
+    const clipdropKey = process.env.CLIPDROP_API_KEY || 'a9ac3fb8f4e1436086cadd0c55d6dfc0829b3c5c';
+    
+    if (!clipdropKey) {
+      return res.status(500).json({ error: 'Clipdrop API key not configured' });
+    }
+
+    // Convert base64 to buffer
+    let imageBuffer;
+    if (image.startsWith('data:')) {
+      // Data URL format
+      const base64 = image.split(',')[1];
+      imageBuffer = Buffer.from(base64, 'base64');
+    } else {
+      // Direct base64
+      imageBuffer = Buffer.from(image, 'base64');
+    }
+
+    // Create FormData for Clipdrop API
+    const formData = new FormData();
+    formData.append('image_file', imageBuffer, 'image.png');
+
+    // Call Clipdrop API
+    const response = await fetch('https://api.clipdrop.co/remove-background', {
+      method: 'POST',
+      headers: {
+        'x-api-key': clipdropKey,
+        ...formData.getHeaders()
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      console.error('Clipdrop error:', response.status, await response.text());
+      return res.status(500).json({ 
+        error: 'Background removal failed',
+        status: response.status 
+      });
+    }
+
+    // Get PNG result as buffer
+    const resultBuffer = await response.buffer();
+    
+    // Convert to base64 PNG
+    const base64Result = resultBuffer.toString('base64');
+    const pngDataUrl = `data:image/png;base64,${base64Result}`;
+
+    res.json({ 
+      success: true,
+      image: pngDataUrl,
+      type: 'image/png'
+    });
+
+  } catch (error) {
+    console.error('Remove-BG error:', error);
+    res.status(500).json({ 
+      error: 'Processing failed',
+      message: error.message 
+    });
+  }
+});
+
+// ============================================
+// ROUTE 4: Health Check
 // ============================================
 app.get('/', (req, res) => {
   res.json({
@@ -227,11 +304,14 @@ app.get('/', (req, res) => {
     endpoints: [
       'GET /api/gold — Live gold + currency rates',
       'GET /api/transcript?videoId=xxx — YouTube transcript',
+      'POST /api/remove-bg — Remove background from image (base64)',
     ],
     time: new Date().toISOString()
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Toolyfi Backend running on port ${PORT}`);
+  console.log(`🚀 Toolyfi Backend running on port ${PORT}`);
+  console.log(`📍 Health: http://localhost:${PORT}`);
+  console.log(`🖼️  Remove-BG: POST http://localhost:${PORT}/api/remove-bg`);
 });
