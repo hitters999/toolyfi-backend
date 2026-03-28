@@ -29,15 +29,41 @@ app.get('/api/gold', async (req, res) => {
     const cached = getCache('gold');
     if (cached) return res.json(cached);
 
-    // Fetch Gold Price (USD/oz)
-    let goldUSD = 3100;
+    // Fetch Gold Price (USD/oz) - multiple sources
+    let goldUSD = 3300; // fallback
+    
+    // Method 1: metals.live (free, accurate)
     try {
-      const goldRes = await fetch('https://api.gold-api.com/price/XAU');
-      if (goldRes.ok) {
-        const data = await goldRes.json();
-        goldUSD = data.price || data.Price || data.bid || 3100;
+      const r = await fetch('https://api.metals.live/v1/spot/gold');
+      if (r.ok) {
+        const d = await r.json();
+        const price = d[0]?.price || d?.price || null;
+        if (price && price > 1000) { goldUSD = price; }
       }
     } catch(e) {}
+
+    // Method 2: frankfurter (XAU vs USD)
+    if (goldUSD === 3300) {
+      try {
+        const r = await fetch('https://api.frankfurter.app/latest?from=XAU&to=USD');
+        if (r.ok) {
+          const d = await r.json();
+          if (d.rates && d.rates.USD && d.rates.USD > 1000) goldUSD = d.rates.USD;
+        }
+      } catch(e) {}
+    }
+
+    // Method 3: gold-api.com
+    if (goldUSD === 3300) {
+      try {
+        const r = await fetch('https://api.gold-api.com/price/XAU');
+        if (r.ok) {
+          const d = await r.json();
+          const price = d.price_gram_24k ? d.price_gram_24k * 31.1035 : (d.price || d.Price || d.ask || null);
+          if (price && price > 1000) goldUSD = price;
+        }
+      } catch(e) {}
+    }
 
     // Fetch Currency Rates
     let rates = {};
