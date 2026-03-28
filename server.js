@@ -234,7 +234,7 @@ app.post('/api/remove-bg', async (req, res) => {
       return res.status(400).json({ error: 'Image data required (base64)' });
     }
 
-    const clipdropKey = process.env.CLIPDROP_API_KEY || 'a9ac3fb8f4e1436086cadd0c55d6dfc0829b3c5c';
+    const clipdropKey = process.env.CLIPDROP_KEY || '7a5f34d128d08e246eab2afe4986c2bfe29174a80b167d35ca2b30ec8fbfa4962cfa5b101dc6512bfb52bc704d194a36';
     
     if (!clipdropKey) {
       return res.status(500).json({ error: 'Clipdrop API key not configured' });
