@@ -1,8 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const FormData = require('form-data');
-const fs = require('fs');
-const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -12,12 +9,11 @@ app.use(express.urlencoded({ limit: '50mb' }));
 
 // ============================================
 // CACHE SYSTEM
-// Gold: 10 hours (100 req/month safe — ~2-3 calls/day)
-// Transcript: 5 minutes (unchanged)
+// Gold: 10 hours | Transcript: 5 minutes
 // ============================================
 let cache = {};
-const GOLD_CACHE_TIME   = 10 * 60 * 60 * 1000; // 10 hours
-const CACHE_TIME        =  5 * 60 * 1000;        // 5 minutes (transcript)
+const GOLD_CACHE_TIME = 10 * 60 * 60 * 1000;
+const CACHE_TIME      =  5 * 60 * 1000;
 
 function getCache(key) {
   if (!cache[key]) return null;
@@ -25,43 +21,35 @@ function getCache(key) {
   if (Date.now() - cache[key].time < ttl) return cache[key].data;
   return null;
 }
-
 function setCache(key, data) {
   cache[key] = { data, time: Date.now() };
 }
 
 // ============================================
 // ROUTE 1: Gold + Currency Rates
-// Primary: GoldAPI.io (GOLD_API_KEY in .env)
-// Fallbacks: Alpha Vantage → metals.live → gold-api.com
 // ============================================
 app.get('/api/gold', async (req, res) => {
   try {
     const cached = getCache('gold');
     if (cached) return res.json({ ...cached, source: 'cache' });
 
-    let goldUSD = 3300; // final fallback value
+    let goldUSD = 3300;
 
-    // ── Method 1: GoldAPI.io (Primary — aapki key) ──
+    // Method 1: GoldAPI.io
     try {
       const goldApiKey = process.env.GOLD_API_KEY;
       if (goldApiKey) {
         const r = await fetch('https://www.goldapi.io/api/XAU/USD', {
-          headers: {
-            'x-access-token': goldApiKey,
-            'Content-Type': 'application/json'
-          }
+          headers: { 'x-access-token': goldApiKey, 'Content-Type': 'application/json' }
         });
         if (r.ok) {
           const d = await r.json();
-          if (d && d.price && d.price > 1000) {
-            goldUSD = d.price;
-          }
+          if (d && d.price && d.price > 1000) goldUSD = d.price;
         }
       }
     } catch(e) {}
 
-    // ── Method 2: Alpha Vantage (fallback) ──
+    // Method 2: Alpha Vantage
     if (goldUSD === 3300) {
       try {
         const avKey = process.env.ALPHAVANTAGE_KEY;
@@ -81,7 +69,7 @@ app.get('/api/gold', async (req, res) => {
       } catch(e) {}
     }
 
-    // ── Method 3: metals.live (fallback) ──
+    // Method 3: metals.live
     if (goldUSD === 3300) {
       try {
         const r = await fetch('https://api.metals.live/v1/spot/gold');
@@ -93,7 +81,7 @@ app.get('/api/gold', async (req, res) => {
       } catch(e) {}
     }
 
-    // ── Method 4: gold-api.com (last fallback) ──
+    // Method 4: gold-api.com
     if (goldUSD === 3300) {
       try {
         const r = await fetch('https://api.gold-api.com/price/XAU');
@@ -105,7 +93,7 @@ app.get('/api/gold', async (req, res) => {
       } catch(e) {}
     }
 
-    // ── Fetch Currency Rates ──
+    // Currency Rates
     let rates = {};
     try {
       const fxRes = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
@@ -159,18 +147,14 @@ app.get('/api/gold', async (req, res) => {
     const result = {
       goldUSD:            Math.round(goldUSD * 100) / 100,
       usdToPkr:           Math.round(usdToPkr * 100) / 100,
-      // 24K base rates
       goldPKRperTola:     Math.round(goldPKRperTola),
       goldPKRperGram:     Math.round(goldPKRperGram),
       goldPKRper10Gram:   Math.round(goldPKRperGram * 10),
       goldPKRperOunce:    Math.round(goldPKRperOz),
-      // 22K rates
       gold22KperTola:     Math.round(goldPKRperTola * (22/24)),
       gold22KperGram:     Math.round(goldPKRperGram * (22/24)),
-      // 21K rates
       gold21KperTola:     Math.round(goldPKRperTola * (21/24)),
       gold21KperGram:     Math.round(goldPKRperGram * (21/24)),
-      // 18K rates
       gold18KperTola:     Math.round(goldPKRperTola * (18/24)),
       gold18KperGram:     Math.round(goldPKRperGram * (18/24)),
       currencies,
@@ -182,7 +166,6 @@ app.get('/api/gold', async (req, res) => {
     res.json(result);
 
   } catch(err) {
-    // Stale cache fallback — agar API fail ho, purana data return karo
     const stale = cache['gold'];
     if (stale) return res.json({ ...stale.data, source: 'stale_cache' });
     res.status(500).json({ error: err.message });
@@ -190,7 +173,7 @@ app.get('/api/gold', async (req, res) => {
 });
 
 // ============================================
-// ROUTE 2: YouTube Transcript (UNCHANGED)
+// ROUTE 2: YouTube Transcript
 // ============================================
 app.get('/api/transcript', async (req, res) => {
   const { videoId } = req.query;
@@ -264,21 +247,16 @@ app.get('/api/transcript', async (req, res) => {
 });
 
 // ============================================
-// ROUTE 3: Remove Background — Clipdrop API (UNCHANGED)
+// ROUTE 3: Remove Background — Clipdrop API
+// FIX: Built-in FormData + arrayBuffer() instead of node-fetch's buffer()
 // ============================================
 app.post('/api/remove-bg', async (req, res) => {
   try {
     const { image } = req.body;
+    if (!image) return res.status(400).json({ error: 'Image data required (base64)' });
 
-    if (!image) {
-      return res.status(400).json({ error: 'Image data required (base64)' });
-    }
-
-    const clipdropKey = process.env.CLIPDROP_KEY || '7a5f34d128d08e246eab2afe4986c2bfe29174a80b167d35ca2b30ec8fbfa4962cfa5b101dc6512bfb52bc704d194a36';
-
-    if (!clipdropKey) {
-      return res.status(500).json({ error: 'Clipdrop API key not configured' });
-    }
+    const clipdropKey = process.env.CLIPDROP_KEY;
+    if (!clipdropKey) return res.status(500).json({ error: 'Clipdrop API key not configured' });
 
     let imageBuffer;
     if (image.startsWith('data:')) {
@@ -288,42 +266,33 @@ app.post('/api/remove-bg', async (req, res) => {
       imageBuffer = Buffer.from(image, 'base64');
     }
 
+    // Built-in FormData (Node 18+) — no 'form-data' package needed
     const formData = new FormData();
-    formData.append('image_file', imageBuffer, 'image.png');
+    const blob = new Blob([imageBuffer], { type: 'image/png' });
+    formData.append('image_file', blob, 'image.png');
 
     const response = await fetch('https://api.clipdrop.co/remove-background', {
       method: 'POST',
-      headers: {
-        'x-api-key': clipdropKey,
-        ...formData.getHeaders()
-      },
+      headers: { 'x-api-key': clipdropKey },
       body: formData
     });
 
     if (!response.ok) {
-      console.error('Clipdrop error:', response.status, await response.text());
-      return res.status(500).json({
-        error: 'Background removal failed',
-        status: response.status
-      });
+      const errText = await response.text();
+      console.error('Clipdrop error:', response.status, errText);
+      return res.status(500).json({ error: 'Background removal failed', status: response.status });
     }
 
-    const resultBuffer = await response.buffer();
-    const base64Result = resultBuffer.toString('base64');
+    // FIX: arrayBuffer() instead of .buffer() (node-fetch only)
+    const arrayBuf = await response.arrayBuffer();
+    const base64Result = Buffer.from(arrayBuf).toString('base64');
     const pngDataUrl = `data:image/png;base64,${base64Result}`;
 
-    res.json({
-      success: true,
-      image: pngDataUrl,
-      type: 'image/png'
-    });
+    res.json({ success: true, image: pngDataUrl, type: 'image/png' });
 
   } catch (error) {
     console.error('Remove-BG error:', error);
-    res.status(500).json({
-      error: 'Processing failed',
-      message: error.message
-    });
+    res.status(500).json({ error: 'Processing failed', message: error.message });
   }
 });
 
@@ -336,28 +305,16 @@ app.get('/', (req, res) => {
     endpoints: [
       'GET  /api/gold              — Live gold + currency rates (cached 10hr)',
       'GET  /api/transcript?videoId=xxx — YouTube transcript',
-      'POST /api/remove-bg         — Remove background from image (base64)',
+      'POST /api/remove-bg         — Remove background (base64)',
     ],
     time: new Date().toISOString()
   });
 });
 
-// ============================================
-// ROUTE 5: UptimeRobot Ping — 0 API calls
-// UptimeRobot is endpoint ko har 5 min ping kare
-// Server zinda rahega, Gold API touch nahi hogi
-// ============================================
 app.get('/api/health-check', (req, res) => {
-  res.status(200).json({
-    status: 'alive',
-    time: new Date().toISOString()
-  });
+  res.status(200).json({ status: 'alive', time: new Date().toISOString() });
 });
 
 app.listen(PORT, () => {
   console.log(`🚀 Toolyfi Backend running on port ${PORT}`);
-  console.log(`📍 Health: http://localhost:${PORT}`);
-  console.log(`🥇 Gold:   GET  http://localhost:${PORT}/api/gold`);
-  console.log(`🎬 Transcript: GET http://localhost:${PORT}/api/transcript`);
-  console.log(`🖼️  Remove-BG: POST http://localhost:${PORT}/api/remove-bg`);
 });
