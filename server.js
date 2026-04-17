@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const fetch = require('node-fetch');
 const FormData = require('form-data');
 const fs = require('fs');
 const path = require('path');
@@ -329,7 +328,7 @@ app.post('/api/remove-bg', async (req, res) => {
 });
 
 // ============================================
-// ROUTE 4: Health Check (UNCHANGED)
+// ROUTE 4: Health Check
 // ============================================
 app.get('/', (req, res) => {
   res.json({
@@ -339,6 +338,18 @@ app.get('/', (req, res) => {
       'GET  /api/transcript?videoId=xxx — YouTube transcript',
       'POST /api/remove-bg         — Remove background from image (base64)',
     ],
+    time: new Date().toISOString()
+  });
+});
+
+// ============================================
+// ROUTE 5: UptimeRobot Ping — 0 API calls
+// UptimeRobot is endpoint ko har 5 min ping kare
+// Server zinda rahega, Gold API touch nahi hogi
+// ============================================
+app.get('/api/health-check', (req, res) => {
+  res.status(200).json({
+    status: 'alive',
     time: new Date().toISOString()
   });
 });
