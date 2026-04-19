@@ -297,7 +297,45 @@ app.post('/api/remove-bg', async (req, res) => {
 });
 
 // ============================================
-// ROUTE 4: Health Check
+// ROUTE 4: Gemma AI Proxy
+// Keeps API key safe on server side
+// ============================================
+app.post('/api/gemma', async (req, res) => {
+  try {
+    const gemmaKey = process.env.GEMMA_API_KEY;
+    if (!gemmaKey) return res.status(500).json({ error: 'Gemma API key not configured' });
+
+    const { contents, system_instruction, generationConfig } = req.body;
+    if (!contents) return res.status(400).json({ error: 'contents required' });
+
+    const MODEL = 'gemma-4-31b-it';
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${gemmaKey}`;
+
+    const body = { contents };
+    if (system_instruction) body.system_instruction = system_instruction;
+    if (generationConfig) body.generationConfig = generationConfig;
+
+    const response = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+      const errData = await response.json();
+      return res.status(response.status).json({ error: errData.error?.message || 'Gemma API error' });
+    }
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// ROUTE 5: Health Check
 // ============================================
 app.get('/', (req, res) => {
   res.json({
@@ -306,6 +344,7 @@ app.get('/', (req, res) => {
       'GET  /api/gold              — Live gold + currency rates (cached 10hr)',
       'GET  /api/transcript?videoId=xxx — YouTube transcript',
       'POST /api/remove-bg         — Remove background (base64)',
+      'POST /api/gemma             — Gemma AI proxy (secure)',
     ],
     time: new Date().toISOString()
   });
