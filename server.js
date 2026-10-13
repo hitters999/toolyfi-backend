@@ -1,11 +1,13 @@
 const express = require('express');
 const cors = require('cors');
+const allah15Router = require('./modules/15-seconds-for-allah/router');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb' }));
+app.use('/api/15-seconds-for-allah', allah15Router);
 
 // ============================================
 // CACHE SYSTEM
