@@ -25,3 +25,7 @@ Set these values in the deployment provider's secret manager, not in source cont
 Never commit Firebase service-account credentials or paste the private key into a public issue or pull request. See [`.env.15-seconds-for-allah.example`](.env.15-seconds-for-allah.example) for variable names only.
 
 The service also supports other Toolyfi integrations. See `server.js` for the environment variables those existing routes use.
+
+## Container deployment
+
+The repository includes a minimal non-root `Dockerfile` and `.dockerignore`. See [`DEPLOYMENT.md`](DEPLOYMENT.md) for local build commands, runtime secret requirements, and the required post-deployment HTTPS checks. These files are deployment scaffolding; they do not provision a host or Firebase service-account credentials.

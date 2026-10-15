@@ -137,7 +137,12 @@ router.post('/reward/complete', async (req, res) => {
         createdAt: new Date(now)
       });
 
-      return { pointsAwarded: POINTS_PER_SESSION, totalPoints: nextPoints, pkrBalance: Number((nextPoints * 0.01).toFixed(2)) };
+      return {
+        pointsAwarded: POINTS_PER_SESSION,
+        totalPoints: nextPoints,
+        completedSessions: currentSessions + 1,
+        pkrBalance: Number((nextPoints * 0.01).toFixed(2))
+      };
     });
 
     return res.json({ success: true, ...result });
