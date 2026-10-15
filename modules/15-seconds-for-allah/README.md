@@ -19,7 +19,13 @@ Mounted by the main server at `/api/15-seconds-for-allah`:
 - The server verifies the token and uses the Firebase UID as the account key.
 - Points are awarded only inside a Firestore transaction.
 - Client-supplied point totals are never trusted.
-- Each reward session can be claimed once.
+- The server measures the minimum 15-second interval; `elapsedSeconds` supplied by a client is ignored.
+- Only one unclaimed reward session may be active per Firebase UID, and it must be claimed once before another can start.
+- Each reward session can be claimed once; expired, stale, and cross-user sessions are rejected.
+
+## Local checks
+
+Run the policy regression tests with `npm test` from the backend repository root. The tests do not require Firebase credentials.
 
 ## Required server environment
 
