@@ -2,10 +2,15 @@ const express = require('express');
 const crypto = require('crypto');
 const { getDb } = require('./firebase');
 const { requireUser } = require('./auth');
+const {
+  SESSION_SECONDS,
+  SESSION_LIFETIME_MS,
+  validateRewardClaim,
+  isLiveUnclaimedSession
+} = require('./reward-policy');
 
 const router = express.Router();
 const POINTS_PER_SESSION = 10;
-const SESSION_SECONDS = 15;
 
 function userRef(db, uid) {
   return db.collection('allah15_users').doc(uid);
@@ -42,24 +47,46 @@ router.post('/reward/start', async (req, res) => {
     const db = getDb();
     const sessionId = crypto.randomUUID();
     const now = Date.now();
-    await db.collection('allah15_reward_sessions').doc(sessionId).set({
-      uid: req.user.uid,
-      startedAtMs: now,
-      expiresAtMs: now + 10 * 60 * 1000,
-      claimed: false,
-      createdAt: new Date(now)
+    const accountRef = userRef(db, req.user.uid);
+    const sessionCollection = db.collection('allah15_reward_sessions');
+    const sessionRef = sessionCollection.doc(sessionId);
+
+    await db.runTransaction(async transaction => {
+      const accountSnap = await transaction.get(accountRef);
+      const account = accountSnap.exists ? accountSnap.data() : {};
+      const activeSessionId = account.activeRewardSessionId;
+      if (typeof activeSessionId === 'string' && activeSessionId) {
+        const activeRef = sessionCollection.doc(activeSessionId);
+        const activeSnap = await transaction.get(activeRef);
+        if (activeSnap.exists && activeSnap.data().uid === req.user.uid && isLiveUnclaimedSession(activeSnap.data(), now)) {
+          throw Object.assign(new Error('Finish or let your current reward session expire before starting another'), { code: 'ACTIVE_SESSION' });
+        }
+      }
+
+      transaction.set(sessionRef, {
+        uid: req.user.uid,
+        startedAtMs: now,
+        expiresAtMs: now + SESSION_LIFETIME_MS,
+        claimed: false,
+        createdAt: new Date(now)
+      });
+      transaction.set(accountRef, {
+        uid: req.user.uid,
+        activeRewardSessionId: sessionId
+      }, { merge: true });
     });
-    return res.status(201).json({ sessionId, requiredSeconds: SESSION_SECONDS, expiresAt: new Date(now + 10 * 60 * 1000).toISOString() });
+    return res.status(201).json({ sessionId, requiredSeconds: SESSION_SECONDS, expiresAt: new Date(now + SESSION_LIFETIME_MS).toISOString() });
   } catch (error) {
+    if (error.code === 'ACTIVE_SESSION') return res.status(409).json({ error: error.message });
     console.error('Allah15 reward start failed:', error);
     return res.status(503).json({ error: 'Reward service is not configured or unavailable' });
   }
 });
 
 router.post('/reward/complete', async (req, res) => {
-  const { sessionId, elapsedSeconds } = req.body || {};
-  if (!sessionId || !Number.isFinite(Number(elapsedSeconds))) {
-    return res.status(400).json({ error: 'sessionId and elapsedSeconds are required' });
+  const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
+    return res.status(400).json({ error: 'A valid reward sessionId is required' });
   }
 
   try {
@@ -67,19 +94,22 @@ router.post('/reward/complete', async (req, res) => {
     const sessionRef = db.collection('allah15_reward_sessions').doc(String(sessionId));
     const accountRef = userRef(db, req.user.uid);
     const eventRef = db.collection('allah15_point_events').doc();
+    const now = Date.now();
 
     const result = await db.runTransaction(async transaction => {
       const sessionSnap = await transaction.get(sessionRef);
-      if (!sessionSnap.exists) throw Object.assign(new Error('Reward session not found'), { code: 'NOT_FOUND' });
-
-      const session = sessionSnap.data();
-      if (session.uid !== req.user.uid) throw Object.assign(new Error('Reward session does not belong to this user'), { code: 'FORBIDDEN' });
-      if (session.claimed) throw Object.assign(new Error('Reward session already claimed'), { code: 'CONFLICT' });
-      if (Date.now() > Number(session.expiresAtMs)) throw Object.assign(new Error('Reward session expired'), { code: 'EXPIRED' });
-      if (Number(elapsedSeconds) < SESSION_SECONDS) throw Object.assign(new Error('Complete the full 15-second session first'), { code: 'TOO_EARLY' });
-
       const accountSnap = await transaction.get(accountRef);
+      const session = sessionSnap.exists ? sessionSnap.data() : null;
       const account = accountSnap.exists ? accountSnap.data() : {};
+      const claim = validateRewardClaim({
+        session,
+        uid: req.user.uid,
+        sessionId,
+        activeSessionId: account.activeRewardSessionId,
+        nowMs: now
+      });
+      if (!claim.ok) throw Object.assign(new Error(claim.message), { code: claim.code });
+
       const currentPoints = Number(account.points || 0);
       const currentSessions = Number(account.completedSessions || 0);
       const nextPoints = currentPoints + POINTS_PER_SESSION;
@@ -91,15 +121,20 @@ router.post('/reward/complete', async (req, res) => {
         points: nextPoints,
         pkrBalance: Number((nextPoints * 0.01).toFixed(2)),
         completedSessions: currentSessions + 1,
-        updatedAt: new Date()
+        activeRewardSessionId: null,
+        updatedAt: new Date(now)
       }, { merge: true });
-      transaction.update(sessionRef, { claimed: true, claimedAt: new Date(), elapsedSeconds: Number(elapsedSeconds) });
+      transaction.update(sessionRef, {
+        claimed: true,
+        claimedAt: new Date(now),
+        elapsedSeconds: Math.floor(claim.elapsedMs / 1000)
+      });
       transaction.set(eventRef, {
         uid: req.user.uid,
         type: '15_second_session',
         points: POINTS_PER_SESSION,
         sessionId: String(sessionId),
-        createdAt: new Date()
+        createdAt: new Date(now)
       });
 
       return { pointsAwarded: POINTS_PER_SESSION, totalPoints: nextPoints, pkrBalance: Number((nextPoints * 0.01).toFixed(2)) };
@@ -108,7 +143,8 @@ router.post('/reward/complete', async (req, res) => {
     return res.json({ success: true, ...result });
   } catch (error) {
     const status = { NOT_FOUND: 404, FORBIDDEN: 403, CONFLICT: 409, EXPIRED: 410, TOO_EARLY: 422 }[error.code] || 503;
-    return res.status(status).json({ error: error.message || 'Reward service unavailable' });
+    if (status === 503) console.error('Allah15 reward completion failed:', error);
+    return res.status(status).json({ error: status === 503 ? 'Reward service is not configured or unavailable' : error.message });
   }
 });
 

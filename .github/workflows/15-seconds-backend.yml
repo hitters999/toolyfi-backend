@@ -1,0 +1,45 @@
+name: 15 Seconds for ALLAH backend checks
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'modules/15-seconds-for-allah/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'server.js'
+      - '.github/workflows/15-seconds-backend.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'modules/15-seconds-for-allah/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'server.js'
+      - '.github/workflows/15-seconds-backend.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Run tests
+        run: npm test
+      - name: Check JavaScript syntax
+        run: |
+          node --check server.js
+          node --check modules/15-seconds-for-allah/router.js
+          node --check modules/15-seconds-for-allah/auth.js
+          node --check modules/15-seconds-for-allah/firebase.js
+          node --check modules/15-seconds-for-allah/reward-policy.js
+      - name: Check for high or critical production advisories
+        run: npm audit --omit=dev --audit-level=high
