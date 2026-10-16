@@ -33,7 +33,6 @@ router.get('/me', async (req, res) => {
       email: req.user.email || null,
       displayName: req.user.name || data.displayName || null,
       points: Number(data.points || 0),
-      pkrBalance: Number(data.pkrBalance || 0),
       completedSessions: Number(data.completedSessions || 0)
     });
   } catch (error) {
@@ -119,7 +118,6 @@ router.post('/reward/complete', async (req, res) => {
         email: req.user.email || account.email || null,
         displayName: req.user.name || account.displayName || null,
         points: nextPoints,
-        pkrBalance: Number((nextPoints * 0.01).toFixed(2)),
         completedSessions: currentSessions + 1,
         activeRewardSessionId: null,
         updatedAt: new Date(now)
@@ -140,8 +138,7 @@ router.post('/reward/complete', async (req, res) => {
       return {
         pointsAwarded: POINTS_PER_SESSION,
         totalPoints: nextPoints,
-        completedSessions: currentSessions + 1,
-        pkrBalance: Number((nextPoints * 0.01).toFixed(2))
+        completedSessions: currentSessions + 1
       };
     });
 
